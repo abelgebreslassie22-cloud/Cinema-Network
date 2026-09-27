@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Basic helpers
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // User Lists validation
+    function isValidUserListEntry(data) {
+      return data.keys().hasAll(['contentId', 'listType', 'addedAt'])
+        && data.keys().size() == 3
+        && data.contentId is string
+        && data.listType in ['watchlist', 'watched', 'liked']
+        && data.addedAt is number;
+    }
+
+    match /users/{userId}/lists/{entryId} {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if true; // Keeping existing open rule for other collections (content, ads, admin, etc.) for compatibility for now.
+    }
+  }
+}

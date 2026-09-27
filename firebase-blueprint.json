@@ -1,0 +1,161 @@
+{
+  "entities": {
+    "ContentItem": {
+      "title": "Content Item",
+      "description": "Represents a media entry (Movie, Series, Anime, Animation)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "originalTitle": { "type": "string" },
+        "year": { "type": "number" },
+        "releaseDate": { "type": "string" },
+        "status": { "type": "string" },
+        "rating": { "type": "number" },
+        "duration": { "type": "string" },
+        "episodes": { "type": "number" },
+        "seasons": { "type": "number" },
+        "category": { "type": "string" },
+        "genres": { "type": "array" },
+        "keywords": { "type": "array" },
+        "franchise": { "type": "string" },
+        "description": { "type": "string" },
+        "posterUrl": { "type": "string" },
+        "backdropUrl": { "type": "string" },
+        "director": { "type": "string" },
+        "cast": { "type": "array" },
+        "qualities": { "type": "object" },
+        "trailerUrl": { "type": "string" },
+        "seasonData": { "type": "array" }
+      },
+      "required": ["id", "title", "year", "category", "genres", "description", "posterUrl", "backdropUrl"]
+    },
+    "Request": {
+      "title": "Request",
+      "description": "User requested content",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "note": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" },
+        "count": { "type": "number" },
+        "completionDate": { "type": "string" }
+      },
+      "required": ["id", "title", "type", "status", "count", "date"]
+    },
+    "Ad": {
+      "title": "Ad",
+      "description": "Advertisement banner or script settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "position": { "type": "string" },
+        "priority": { "type": "string" },
+        "weight": { "type": "number" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "status": { "type": "string" },
+        "imageUrlDesktop": { "type": "string" },
+        "imageUrlTablet": { "type": "string" },
+        "imageUrlMobile": { "type": "string" },
+        "headline": { "type": "string" },
+        "description": { "type": "string" },
+        "buttonText": { "type": "string" },
+        "destinationUrl": { "type": "string" },
+        "customCode": { "type": "string" },
+        "impressions": { "type": "number" },
+        "clicks": { "type": "number" },
+        "firstSeen": { "type": "string" },
+        "lastSeen": { "type": "string" },
+        "dailyStats": { "type": "object" }
+      },
+      "required": ["id", "name", "type", "position", "priority", "weight", "status"]
+    },
+    "CustomSlot": {
+      "title": "Custom Slot",
+      "description": "Custom advertisement slot definition",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "location": { "type": "string" },
+        "description": { "type": "string" },
+        "rotationStrategy": { "type": "string" }
+      },
+      "required": ["id", "name", "width", "height", "location"]
+    },
+    "AdminSettings": {
+      "title": "Admin Settings",
+      "description": "Credentials, login logs and settings for site admin",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "salt": { "type": "string" },
+        "isDefaultPassword": { "type": "boolean" },
+        "loginHistory": { "type": "array" }
+      },
+      "required": ["username", "passwordHash", "salt", "isDefaultPassword"]
+    },
+    "ViewEvent": {
+      "title": "View Event",
+      "description": "Single content view event for analytics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string" },
+        "title": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "category", "title", "timestamp"]
+    },
+    "UserListEntry": {
+      "title": "User List Entry",
+      "description": "An entry for user's customized lists (watchlist, watched, liked)",
+      "type": "object",
+      "properties": {
+        "contentId": { "type": "string" },
+        "listType": { "type": "string", "enum": ["watchlist", "watched", "liked"] },
+        "addedAt": { "type": "number" }
+      },
+      "required": ["contentId", "listType", "addedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}/lists": {
+      "schema": { "$ref": "UserListEntry" },
+      "description": "User specific lists for media interactions"
+    },
+    "content": {
+      "schema": { "$ref": "ContentItem" },
+      "description": "Collection of movies, series, animation, and anime items."
+    },
+    "requests": {
+      "schema": { "$ref": "Request" },
+      "description": "Collection of user submitted requests."
+    },
+    "ads": {
+      "schema": { "$ref": "Ad" },
+      "description": "Collection of advertisements."
+    },
+    "ad_slots": {
+      "schema": { "$ref": "CustomSlot" },
+      "description": "Collection of custom advertisement slots."
+    },
+    "admin_settings": {
+      "schema": { "$ref": "AdminSettings" },
+      "description": "Collection of admin profile records."
+    },
+    "analytics_views": {
+      "schema": { "$ref": "ViewEvent" },
+      "description": "Collection of media views for trending algorithms and charts."
+    }
+  }
+}

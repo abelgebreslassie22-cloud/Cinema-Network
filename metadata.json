@@ -1,0 +1,8 @@
+{
+  "name": "Cinema Network",
+  "description": "A modern movie discovery website to find and download movies, series, cartoons, and anime via Telegram.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

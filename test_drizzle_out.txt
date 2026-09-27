@@ -1,0 +1,40 @@
+DrizzleQueryError: Failed query: select "id", "username", "password", "password_hash", "salt", "is_default_password", "login_history" from "admin_settings"
+params: 
+    at PglitePreparedQuery.queryWithCache (/app/applet/node_modules/src/pg-core/session.ts:73:11)
+    at async PglitePreparedQuery.execute (/app/applet/node_modules/src/pglite/session.ts:95:18)
+    at async test (/app/applet/test_drizzle_pglite.ts:20:15) {
+  query: 'select "id", "username", "password", "password_hash", "salt", "is_default_password", "login_history" from "admin_settings"',
+  params: [],
+  cause: error: column "username" does not exist
+      at pe.Ue (/app/applet/node_modules/@electric-sql/pg-protocol/src/parser.ts:442:11)
+      at pe.tt (/app/applet/node_modules/@electric-sql/pg-protocol/src/parser.ts:220:16)
+      at pe.parse (/app/applet/node_modules/@electric-sql/pg-protocol/src/parser.ts:104:21)
+      at N.qe (/app/applet/node_modules/@electric-sql/pglite/dist/index.js:5:1762)
+      at <anonymous> (/app/applet/node_modules/@electric-sql/pglite/dist/index.js:5:1155)
+      at wasm://wasm/0267bb86:wasm-function[10930]:0x5a5ccf
+      at wasm://wasm/0267bb86:wasm-function[3585]:0x27eaeb
+      at wasm://wasm/0267bb86:wasm-function[3627]:0x2869d1
+      at wasm://wasm/0267bb86:wasm-function[3637]:0x286c2d
+      at wasm://wasm/0267bb86:wasm-function[9914]:0x54fd4d {
+    length: 108,
+    severity: 'ERROR',
+    code: '42703',
+    detail: undefined,
+    hint: undefined,
+    position: '14',
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'parse_relation.c',
+    line: '3827',
+    routine: 'errorMissingColumn',
+    query: 'select "id", "username", "password", "password_hash", "salt", "is_default_password", "login_history" from "admin_settings"',
+    params: [],
+    queryOptions: { rowMode: 'array', parsers: [Object] }
+  }
+}

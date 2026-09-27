@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Circular dark background for the icon -->
+  <circle cx="50" cy="50" r="48" fill="#0A0B0E" />
+
+  <!-- Outer ring C-shape in brand orange -->
+  <path d="M 77.5 25.5 
+           A 36 36 0 1 0 77.5 74.5 
+           L 67.5 64.5 
+           A 22 22 0 1 1 67.5 35.5 
+           Z" 
+        fill="#FF9D1C" />
+
+  <!-- Film strip sprocket notches on the left curve -->
+  <g fill="#0A0B0E" transform="translate(50, 50)">
+    <rect x="-42" y="-5" width="10" height="10" transform="rotate(120)" />
+    <rect x="-42" y="-5" width="10" height="10" transform="rotate(145)" />
+    <rect x="-42" y="-5" width="10" height="10" transform="rotate(170)" />
+    <rect x="-42" y="-5" width="10" height="10" transform="rotate(195)" />
+    <rect x="-42" y="-5" width="10" height="10" transform="rotate(220)" />
+    <rect x="-42" y="-5" width="10" height="10" transform="rotate(245)" />
+  </g>
+
+  <!-- Play button in the center-right opening -->
+  <polygon points="46,34 46,66 74,50" fill="#FF9D1C" />
+</svg>

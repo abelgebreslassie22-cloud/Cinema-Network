@@ -1,0 +1,734 @@
+================================================================================
+CINEMA NETWORK — COMPLETE FRANCHISE SYSTEM AUDIT
+================================================================================
+
+Inspection Date: August 19, 2026
+Codebase: Cinema Network
+Scope: Complete technical, architectural, database, and workflow audit of the Franchise System.
+
+================================================================================
+PART 1 — COMPLETE FRANCHISE ARCHITECTURE
+================================================================================
+
+1. What is a Franchise in Cinema Network?
+In Cinema Network, a Franchise is a logical grouping of related movies and TV series that share a common narrative universe, saga, or collection (for example: "Marvel Cinematic Universe", "Harry Potter", "Breaking Bad Universe", "John Wick").
+
+2. Why does the website have a Franchise system?
+The Franchise system allows users to discover and explore connected titles in chronological or release order, view overall collection stats (total titles, release year range, average rating), and track their watch progress across a franchise. On the homepage, it showcases curated collections in a high-impact horizontal stacked-poster carousel.
+
+3. What pages/components use franchises?
+- Homepage Carousel (`src/components/FranchisesCarousel.tsx` rendered on `src/pages/Home.tsx`)
+- Franchise Details Page (`src/pages/FranchiseDetails.tsx` mapped to route `/franchise/:name`)
+- Content Detail Page (`src/pages/Detail.tsx` displaying the "Franchise Collection" section)
+- Admin Franchise Manager (`src/components/admin/AdminFranchises.tsx` inside `src/pages/admin/Dashboard.tsx`)
+- Admin Content Form (`src/pages/admin/ContentForm.tsx` offering franchise autocomplete datalist and TMDB collection auto-fill)
+
+4. What database tables/fields represent franchises?
+There is NO separate `franchises` relational table. Franchises are represented using denormalized text and integer fields directly inside the `content` table in Supabase PostgreSQL:
+- `franchise` (text): Primary franchise name
+- `franchise_name` (text): Duplicate/alias franchise name field for compatibility
+- `franchise_id` (text): Optional string identifier
+- `franchise_order` (integer): Display/chronological index within the franchise
+- `franchise_description` (text): Description text explaining the universe
+Homepage franchise collections are pre-compiled and stored as a JSON dataset in the `homepage_cache` table under key `'franchises'`.
+
+5. How are franchises identified?
+Franchises are identified primarily by exact or normalized text string matching on the `franchise` / `franchise_name` fields.
+
+6. How are titles connected to franchises?
+Titles are connected to a franchise by having their `franchise` or `franchise_name` column populated with the exact string name of the franchise.
+
+7. How are franchises displayed?
+- Homepage: Rendered as stacked 3D poster cards with title, title count, year range, average rating, and description overlay inside `FranchisesCarousel`.
+- Franchise Details Page: Rendered as a dedicated collection hero view with watch progress tracking, title count, total duration, and a sorted grid/list of titles.
+- Content Detail Page: Rendered as a "Franchise Collection" sidebar/banner card with quick links to explore the franchise.
+
+8. How are franchises created?
+- Automatically: When a movie is fetched from TMDB that contains `belongs_to_collection.name`, or matching keywords from `KNOWN_FRANCHISES` during cache generation.
+- Manually: Via Admin Dashboard (`AdminFranchises.tsx` or `ContentForm.tsx`), where an admin enters a franchise name and assigns content items to it.
+
+9. How are franchises edited?
+An admin edits a franchise name or description in `AdminFranchises.tsx`. Saving updates `franchise`, `franchiseName`, and `franchiseDescription` across all database rows matching that franchise name via batch updates.
+
+10. How are franchises deleted?
+There is no "DELETE FROM franchises" table operation because no franchise table exists. To remove a franchise, an admin removes all titles from the franchise (setting `franchise` to `''`), or deletes all content items associated with it. When a franchise has 0 titles in the database, it disappears from queries and carousels.
+
+11. How are franchise relationships maintained?
+Relationships are maintained by updating the `franchise` text field on content rows. Editing or clearing the text field instantly connects or disconnects the title.
+
+12. Is TMDB involved?
+Yes. During movie metadata ingestion or TMDB search/import (`/api/tmdb/details/...`), if TMDB returns a `belongs_to_collection` object, its `name` is automatically assigned to `franchise` and `franchiseName`.
+
+13. Is the Franchise system automatic, manual, or both?
+Both. It automatically extracts collections from TMDB and auto-detects known franchise titles, while allowing admins full manual control to create, edit, rename, reorder, or reassign franchises.
+
+14. Is franchise information cached?
+Yes. Homepage franchise carousel datasets are compiled server-side and cached in the `homepage_cache` PostgreSQL table (key `'franchises'`) and stored in server memory (`homepageMemoryCache.franchises`).
+
+15. Is Firestore involved?
+Secondary replication only. Real content documents containing `franchise` fields are replicated to Firestore asynchronously via `replicateToFirestore`. Homepage franchise cache is Supabase-ONLY.
+
+16. Is Supabase involved?
+Yes. Supabase PostgreSQL is the absolute source of truth for all content items, franchise fields, and homepage franchise cache.
+
+17. What happens when a movie is added or edited?
+When content is saved/updated via `saveContent()`, Supabase updates the `content` table row. The server then triggers `updateHomepageOnContentMutation()`, rebuilding the homepage franchise cache and syncing the content document to Firestore non-blockingly.
+
+================================================================================
+PART 2 — ALL FRANCHISE-RELATED FILES
+================================================================================
+
+File Map:
+Franchise System
+├── Frontend
+│   ├── src/components/FranchisesCarousel.tsx (Homepage stacked poster carousel)
+│   ├── src/pages/FranchiseDetails.tsx (Public franchise detail & watch tracking page)
+│   ├── src/pages/Detail.tsx (Movie detail page franchise section)
+│   └── src/pages/Home.tsx (Homepage rendering FranchisesCarousel)
+├── Backend & Database
+│   ├── server.ts (Express API endpoints for franchise fetching & admin actions)
+│   ├── server-db.ts (Supabase queries, homepage franchise cache compilation & fallback search)
+│   └── src/db/schema.ts (Database column definitions in content and homepage_cache tables)
+├── Admin
+│   ├── src/components/admin/AdminFranchises.tsx (Dedicated Franchise Management interface)
+│   ├── src/pages/admin/ContentForm.tsx (Content creation/editing form with franchise fields)
+│   └── src/pages/admin/Dashboard.tsx (Admin navigation tab mounting AdminFranchises)
+└── Context & Utilities
+    ├── src/context/DataContext.tsx (Global state manager propagating content updates)
+    └── src/types.ts (TypeScript interface definition for ContentItem franchise fields)
+
+Detailed File Breakdown:
+
+1. `/src/db/schema.ts`
+   - Purpose: Defines Drizzle ORM PostgreSQL database schema for Supabase.
+   - Important Fields: `franchiseId`, `franchiseOrder`, `franchiseName`, `franchise`, `franchiseDescription` in `content` table; `key`, `data` in `homepageCache` table.
+   - Used by: `server-db.ts`.
+
+2. `/server-db.ts`
+   - Purpose: Central database repository & homepage cache engine.
+   - Important Functions: `getFranchiseContentServer()`, `buildAllHomepageDatasets()`, `KNOWN_FRANCHISES`, `saveContent()`, `deleteContent()`.
+   - Used by: `server.ts`.
+
+3. `/server.ts`
+   - Purpose: Express HTTP API server.
+   - Important Endpoints: `GET /api/content/franchise/:name`, `POST /api/content`, `POST /api/admin/deduplicate-database`.
+   - Used by: Frontend React app.
+
+4. `/src/components/FranchisesCarousel.tsx`
+   - Purpose: Renders horizontal scrolling 3D stacked-poster franchise cards.
+   - Important Logic: Accepts precomputed cache or raw items, groups by franchise, sorts by title count & rating, builds 3D poster rotation stack.
+   - Used by: `src/pages/Home.tsx`.
+
+5. `/src/pages/FranchiseDetails.tsx`
+   - Purpose: Public detail view for a specific franchise saga.
+   - Important Logic: Route `/franchise/:name`, queries `/api/content/franchise/:name`, fallback search engines, calculates watched percentage, renders episode/movie list with download modal.
+   - Used by: React Router (`App.tsx`).
+
+6. `/src/pages/Detail.tsx`
+   - Purpose: Individual movie/show page.
+   - Important Logic: Checks `item.franchise` / `item.franchiseName`, fetches `/api/content/franchise/:name`, displays "Franchise Collection" card.
+   - Used by: React Router (`App.tsx`).
+
+7. `/src/components/admin/AdminFranchises.tsx`
+   - Purpose: Admin dashboard tool for creating, editing, managing, and reassigning franchises.
+   - Important Functions: `handleUpdateFranchise()`, `handleCreateFranchiseSubmit()`, `handleAddMovieToFranchise()`, `handleRemoveMovieFromFranchise()`, `handleAddNewTmdbMovieToFranchise()`.
+   - Used by: `src/pages/admin/Dashboard.tsx`.
+
+8. `/src/pages/admin/ContentForm.tsx`
+   - Purpose: Admin form for adding/editing a movie or series.
+   - Important Logic: Displays "Franchise (Optional)" datalist input, auto-populates franchise from TMDB `belongs_to_collection`.
+   - Used by: Admin Dashboard modal.
+
+================================================================================
+PART 3 — DATABASE STRUCTURE
+================================================================================
+
+Franchise information is stored as denormalized columns on the `content` table in Supabase PostgreSQL:
+
+| Table | Field | Type | Purpose | Relationship |
+| ----- | ----- | ---- | ------- | ------------ |
+| content | id | text | Primary Key | 1:1 row identifier |
+| content | franchise | text | Primary franchise string name | Logical grouping key |
+| content | franchise_name | text | Secondary/compatibility franchise string name | Logical grouping key |
+| content | franchise_id | text | Optional string identifier for franchise | Metadata field |
+| content | franchise_order | integer | Numerical index/order of title within franchise | Sort order |
+| content | franchise_description | text | Descriptive text explaining the universe saga | Shared metadata |
+| homepage_cache | key | text | Primary Key (e.g., 'franchises') | Cache identifier |
+| homepage_cache | data | jsonb | Compiled JSON array of category-specific franchises | Precomputed cache |
+
+================================================================================
+PART 4 — HOW A MOVIE IS ASSOCIATED WITH A FRANCHISE
+================================================================================
+
+Cinema Network determines franchise association primarily using string text matching on the `franchise` or `franchise_name` database columns:
+
+```text
+Movie Record in Supabase
+↓
+Check `franchise` / `franchise_name` column
+↓
+If populated (e.g. "Marvel Cinematic Universe")
+↓
+Query: WHERE franchise = 'Marvel Cinematic Universe' OR franchise_name = 'Marvel Cinematic Universe'
+↓
+Sort results: ORDER BY franchise_order ASC or year ASC
+```
+
+If a movie does not have `franchise` explicitly populated, the cache builder (`server-db.ts`) and carousel (`FranchisesCarousel.tsx`) run a secondary keyword check matching `item.title` against `KNOWN_FRANCHISES` array ("John Wick", "Harry Potter", "Spider-Man", etc.).
+
+================================================================================
+PART 5 — TMDB FRANCHISE / COLLECTION DATA
+================================================================================
+
+1. Does TMDB provide franchise/collection data?
+Yes. TMDB includes a `belongs_to_collection` object in movie detail responses (containing `id`, `name`, `poster_path`, `backdrop_path`).
+
+2. Is the TMDB collection ID stored?
+No specific `tmdb_collection_id` column exists in `schema.content`. The collection name is extracted and stored.
+
+3. Is the collection name stored?
+Yes. `belongs_to_collection.name` is stored in both `franchise` and `franchise_name` columns.
+
+4. Is it automatically retrieved during movie ingestion?
+Yes. When importing from TMDB in `ContentForm.tsx` or during database enrichment in `server.ts`, `details.belongs_to_collection.name` is extracted.
+
+5. Is it retrieved when metadata is enriched?
+Yes. Enriched metadata updates `franchise` and `franchiseName` if they are empty.
+
+6. Can a movie be associated with a franchise automatically?
+Yes, via TMDB collection auto-fill or title keyword matching.
+
+7. What happens if TMDB does not provide collection data?
+The franchise field remains blank unless manually entered by an admin or matched by `KNOWN_FRANCHISES`.
+
+8. Can the admin manually override it?
+Yes. Admins can edit the `franchise` text field in `ContentForm.tsx` or `AdminFranchises.tsx` at any time.
+
+================================================================================
+PART 6 — AUTOMATIC FRANCHISE ASSIGNMENT
+================================================================================
+
+Automatic Franchise Assignment Flow:
+
+```text
+Admin adds movie / imports TMDB ID
+↓
+Fetch TMDB Details (/api/tmdb/details/movie/:id)
+↓
+Extract `details.belongs_to_collection.name`
+↓
+Populate `formData.franchise` and `formData.franchiseName`
+↓
+Admin submits form -> POST /api/content
+↓
+`saveContent()` writes row to Supabase `content` table
+↓
+`buildAllHomepageDatasets()` includes title under that franchise name
+```
+
+================================================================================
+PART 7 — MANUAL FRANCHISE ASSIGNMENT
+================================================================================
+
+1. Where is the UI?
+- In `src/pages/admin/ContentForm.tsx` (single title edit/create)
+- In `src/components/admin/AdminFranchises.tsx` (batch franchise manager)
+
+2. Which file?
+`ContentForm.tsx` and `AdminFranchises.tsx`.
+
+3. Which field?
+Input named `franchise` in `ContentForm.tsx`.
+
+4. Is there a dropdown?
+Yes. `ContentForm.tsx` uses an HTML `<datalist id="existing-franchises-list">` populated with all unique franchise names from `globalContent`.
+
+5. Is there a search?
+Yes. `AdminFranchises.tsx` provides library autocomplete search and live TMDB search to add movies directly into a franchise.
+
+6. Can admin select existing franchises?
+Yes, via datalist or autocomplete.
+
+7. Can admin create a new franchise from the content form?
+Yes. Typing a new string in the `franchise` input creates that franchise upon saving.
+
+8. Can admin remove a franchise?
+Yes. Admin can clear the `franchise` input on a title or click "Remove from Franchise" in `AdminFranchises.tsx`.
+
+9. Can admin change a movie from one franchise to another?
+Yes. Changing the text string switches its franchise association immediately.
+
+10. What database updates occur?
+An UPDATE SQL query sets `franchise`, `franchise_name`, and `franchise_description` on the target row in Supabase.
+
+================================================================================
+PART 8 — ADMIN FRANCHISE MANAGEMENT
+================================================================================
+
+Creating a Franchise (`AdminFranchises.tsx`):
+- Admin clicks "Create New Franchise" button.
+- Form fields: Franchise Name (required), Franchise Description, Title Selection search.
+- Submitting updates selected titles via `updateContentItem()`, setting `franchise` and `franchiseDescription` across all selected items.
+
+Editing a Franchise (`AdminFranchises.tsx`):
+- Admin clicks edit icon on a franchise card.
+- Editable fields: Franchise Name, Franchise Description.
+- Saving executes a batch `Promise.all` updating all content items matching the old name to the new name in Supabase.
+
+Deleting a Franchise (`AdminFranchises.tsx`):
+- Admin manages titles and removes all titles from the franchise (setting `franchise = ''`).
+- Movies are NOT deleted from the database — only the franchise string relationship is cleared.
+- When 0 titles belong to a franchise name, the franchise automatically disappears from the database and carousels.
+
+================================================================================
+PART 9 — MANUAL FRANCHISE FIELDS
+================================================================================
+
+Fields an administrator can set:
+- `franchise` (text string, optional/required for franchise grouping)
+- `franchiseName` (text string, kept in sync with `franchise`)
+- `franchiseDescription` (text area, optional description of the universe)
+- `franchiseOrder` (integer, optional numerical index for sorting)
+- `franchiseId` (text string, optional)
+
+================================================================================
+PART 10 — FRANCHISE ORDER
+================================================================================
+
+Ordering logic:
+1. Inside Franchise Details Page & API (`/api/content/franchise/:name`):
+   - Database query orders by `franchise_order ASC` (`schema.content.franchiseOrder`).
+   - Frontend sorts fallback items by `year ASC`.
+2. On Homepage Franchise Carousel (`FranchisesCarousel.tsx`):
+   - Franchises are ordered by Title Count descending (`count`), then Average Rating descending (`numAvgRating`).
+3. Individual Posters inside Franchise Card Stack:
+   - Ordered by `year ASC` (earliest movie first, latest movie last).
+
+================================================================================
+PART 11 — HOMEPAGE FRANCHISE CAROUSEL
+================================================================================
+
+Component: `src/components/FranchisesCarousel.tsx`
+1. Data Retrieval: Receives `items` prop from `Home.tsx` (derived from `data.franchises.items` or `data.franchises`).
+2. API Endpoint: `/api/home/content` (or category-filtered `/api/home/content?category=...`).
+3. Database: Supabase PostgreSQL `homepage_cache` table.
+4. Cache Used: `homepage_cache` key `'franchises'`.
+5. Number Retrieved: Up to 50 franchises per category stored in cache; initial 20 sent to client.
+6. Number Displayed Initially: 20 cards, progressively loading +10 on horizontal scroll threshold.
+7. Sorting: Sorted by title count descending, then average rating descending.
+8. Poster Stack Logic: Up to 5 posters rendered with 3D rotation angle (`rotate(${(idx - (len-1)/2)*5}deg)`).
+9. Click Navigation: Navigates to `/franchise/${encodeURIComponent(franchise.name)}`.
+10. Responsive Behavior: Flex container with horizontal overflow scroll, left/right scroll buttons on desktop, touch snap-scroll on mobile.
+
+================================================================================
+PART 12 — FRANCHISE CACHE
+================================================================================
+
+1. Cache Key: `'franchises'` in `homepage_cache` table and `homepageMemoryCache.franchises`.
+2. Stored Value: JSON dictionary mapping categories ('All', 'Movies', 'Series', 'Animation', 'Anime', 'Asian', 'Indian') to arrays of top 50 franchise objects.
+3. TTL: Persistent in Supabase `homepage_cache` table; reloaded into RAM on server boot.
+4. Invalidation/Rebuild: Triggered automatically whenever any content mutation occurs (`saveContent`, `deleteContent`, `updateContentItem`) via `buildAllHomepageDatasets(true)`.
+5. Firestore Verification: Verified — Homepage franchise cache is stored strictly in Supabase `homepage_cache` table and memory cache. It is NEVER written to or stored in Firestore.
+
+================================================================================
+PART 13 — FRANCHISE CATEGORY FILTERING
+================================================================================
+
+Category filtering is handled both server-side in dataset compilation and client-side:
+- Categories supported: 'All', 'Movies', 'Series', 'Animation', 'Anime', 'Asian', 'Indian'.
+- During `buildAllHomepageDatasets()`, content items are filtered per category before grouping into franchises.
+- The `franchises` cache dataset maintains isolated franchise lists for each category (e.g., `franchisesDataset['Movies']`, `franchisesDataset['Anime']`).
+
+================================================================================
+PART 14 — FRANCHISE DETAILS PAGE
+================================================================================
+
+Component: `src/pages/FranchiseDetails.tsx`
+1. Route: `/franchise/:name`
+2. Param: `:name` (URL-encoded franchise string)
+3. Retrieval Flow:
+   - Primary: Calls `GET /api/content/franchise/:name`
+   - Fallback 1: Calls `GET /api/content/search?q=:cleanName`
+   - Fallback 2: Filters local `contextContent` for matching franchise or title strings
+4. Features:
+   - Displays franchise name, description, title count, release year range, watched count, and progress bar percentage.
+   - Displays list of movies/shows with rating, duration, genres, watchlist toggle, watched toggle, and download modal button.
+
+================================================================================
+PART 15 — HOW FRANCHISE MOVIES ARE SORTED
+================================================================================
+
+1. In Backend Query (`getFranchiseContentServer`):
+   `orderBy(schema.content.franchiseOrder)`
+2. In Frontend (`FranchiseDetails.tsx` & `AdminFranchises.tsx`):
+   Sorted by `year ASC` (`(a.year || 0) - (b.year || 0)`).
+3. In Content Detail Page (`Detail.tsx`):
+   Sorted by `(a.franchiseOrder || 0) - (b.franchiseOrder || 0)`.
+
+================================================================================
+PART 16 — FRANCHISE DUPLICATES
+================================================================================
+
+1. Can two franchises have the same name?
+In string representation, typing the exact same string merges titles into the same franchise. However, case differences ("Marvel" vs "marvel") or trailing spaces create separate groups in raw string matching.
+2. Unique ID?
+No separate franchise entity ID exists; string matching is used.
+3. Duplicate Detection:
+`AdminFranchises.tsx` groups by `(item.franchise || item.franchiseName || '').trim()`.
+
+================================================================================
+PART 17 — FRANCHISE IDENTIFICATION PROBLEMS
+================================================================================
+
+1. Text Sensitivity:
+The system relies on exact string equality. Variations like "MCU", "Marvel Cinematic Universe", or "Marvel Universe" are treated as distinct franchises unless manually edited to match.
+2. Case Sensitivity:
+SQL queries in `getFranchiseContentServer` use `eq(schema.content.franchise, franchiseName)` (exact case equality), whereas fallback searches use `.toLowerCase()`.
+3. Lack of Entity Table:
+Because there is no primary key `franchise_id` table, renaming a franchise requires updating every individual content row in the database.
+
+================================================================================
+PART 18 — FRANCHISE + NEW MOVIE
+================================================================================
+
+When a new movie is added to an existing franchise:
+1. `saveContent()` inserts the row into Supabase `content` table with `franchise = 'Franchise Name'`.
+2. `buildAllHomepageDatasets(true)` runs asynchronously, inserting the new movie into the franchise group in `homepage_cache`.
+3. Replicating function `replicateToFirestore()` queues/writes the document to Firestore.
+4. Next request to `/api/content/franchise/:name` returns the new movie immediately.
+
+================================================================================
+PART 19 — FRANCHISE + EDITED MOVIE
+================================================================================
+
+When an admin changes a movie from Franchise A to Franchise B:
+1. Supabase updates the row with `franchise = 'Franchise B'`.
+2. `buildAllHomepageDatasets(true)` rebuilds `homepage_cache`.
+3. The movie drops out of Franchise A results and appears under Franchise B.
+
+================================================================================
+PART 20 — FRANCHISE + DELETED MOVIE
+================================================================================
+
+When a movie belonging to a franchise is deleted:
+1. `deleteContent(id)` deletes the row from Supabase `content`.
+2. `buildAllHomepageDatasets(true)` removes the item from the franchise card stack in cache.
+3. If that was the last movie in the franchise, the franchise automatically ceases to exist in queries and carousels.
+
+================================================================================
+PART 21 — EMPTY FRANCHISE
+================================================================================
+
+A franchise with 0 movies does not exist in the database because franchises are derived dynamically from content rows. It will not appear on the homepage carousel or in search results.
+
+================================================================================
+PART 22 — FRANCHISE SEARCH
+================================================================================
+
+1. Admin Search (`AdminFranchises.tsx`):
+Filters global content by checking if `item.franchise` includes the search query.
+2. Detail Page Fallback Search (`FranchiseDetails.tsx`):
+Calls `/api/content/search?q=cleanName` if exact franchise match fails.
+3. API Endpoint (`/api/content/search`):
+Queries Supabase using `ilike(schema.content.franchise, pattern)` and `ilike(schema.content.franchiseName, pattern)`.
+
+================================================================================
+PART 23 — FRANCHISE API ENDPOINTS
+================================================================================
+
+| Endpoint | Method | Purpose | Input | Output | Supabase | Firestore | Auth |
+| -------- | ------ | ------- | ----- | ------ | -------- | --------- | ---- |
+| /api/content/franchise/:name | GET | Fetch all titles in a franchise | URL param :name | Array of ContentItem | Yes | No | Public |
+| /api/content | POST | Save/update title (incl. franchise) | JSON body | { success: true } | Yes | Replica | Admin |
+| /api/home/content | GET | Fetch homepage sections (incl. franchises) | Query param category | Homepage data JSON | Yes | No | Public |
+| /api/content/search | GET | Search content by keyword/franchise | Query param q | Array of ContentItem | Yes | No | Public |
+
+================================================================================
+PART 24 — FRANCHISE DATABASE READS
+================================================================================
+
+1. `getFranchiseContentServer(franchiseName)` in `server-db.ts`:
+   - Table: `content`
+   - Fields: All columns
+   - Filter: `where(or(eq(franchise, name), eq(franchiseName, name)))`
+   - Sort: `orderBy(franchiseOrder ASC)`
+2. `buildAllHomepageDatasets()` in `server-db.ts`:
+   - Table: `content`
+   - Fields: All columns
+   - Purpose: Aggregates all content rows to group by franchise and write to `homepage_cache`.
+3. `getHomeContent()` in `server-db.ts`:
+   - Table: `homepage_cache`
+   - Filter: `where(eq(key, 'franchises'))`
+
+================================================================================
+PART 25 — FRANCHISE DATABASE WRITES
+================================================================================
+
+1. `saveContent(item)` in `server-db.ts`:
+   - Table: `content`
+   - Write: `INSERT` or `UPDATE` row with `franchise`, `franchise_name`, `franchise_order`, `franchise_description`.
+2. `saveHomepageCacheKey('franchises', data)` in `server-db.ts`:
+   - Table: `homepage_cache`
+   - Write: `INSERT ... ON CONFLICT (key) DO UPDATE` with compiled JSON dataset.
+
+================================================================================
+PART 26 — FIRESTORE
+================================================================================
+
+- Real Content Items: Replicated asynchronously to Firestore `content` collection for secondary backup.
+- Franchise Homepage Cache: STORED STRICTLY IN SUPABASE `homepage_cache` TABLE. Verified: No franchise carousel cache is stored in Firestore.
+
+================================================================================
+PART 27 — CACHE INVALIDATION
+================================================================================
+
+Triggers that rebuild franchise cache (`buildAllHomepageDatasets(true)`):
+- Creating a movie with a franchise
+- Editing a movie's franchise field
+- Deleting a movie
+- Batch updating franchise details in `AdminFranchises.tsx`
+- Deduplicating database content (`deduplicateContentDatabase()`)
+- Server startup initialization
+
+================================================================================
+PART 28 — ADMIN WORKFLOW
+================================================================================
+
+```text
+Admin Logs In
+↓
+Opens Admin Dashboard -> Clicks "Franchises" Tab
+↓
+Renders `AdminFranchises.tsx`
+↓
+Option A: Create New Franchise (Name, Desc, Select Titles)
+Option B: Manage Existing Franchise (Add/Remove Titles, TMDB Import)
+Option C: Edit Franchise Details (Rename, Update Desc)
+↓
+Executes `updateContentItem()` -> POST /api/content
+↓
+Supabase updates `content` table
+↓
+`buildAllHomepageDatasets(true)` updates `homepage_cache` table
+↓
+Public website updates instantly
+```
+
+================================================================================
+PART 29 — USER WORKFLOW
+================================================================================
+
+```text
+User opens Homepage (/)
+↓
+`GET /api/home/content` reads `homepage_cache`
+↓
+`FranchisesCarousel` renders 3D poster stacked cards
+↓
+User clicks Franchise Card -> Navigates to `/franchise/:name`
+↓
+`FranchiseDetails.tsx` fetches `GET /api/content/franchise/:name`
+↓
+Displays title list, watch progress, and download controls
+```
+
+================================================================================
+PART 30 — PERFORMANCE
+================================================================================
+
+1. Homepage Query Count: 1 single read from `homepage_cache` table (key `'franchises'`) served from memory cache in ~1ms.
+2. Franchise Details Query Count: 1 single query on `content` table filtered by `franchise` column.
+3. Precomputed Caching: Yes, all homepage franchise stats (poster stacks, title counts, year ranges, avg ratings) are precomputed.
+
+================================================================================
+PART 31 — COMPLETE DATA FLOW
+================================================================================
+
+A. Creating a Franchise:
+Admin (`AdminFranchises.tsx`) -> batch `updateContentItem()` -> `POST /api/content` -> `saveContent()` -> Supabase `content` table -> `buildAllHomepageDatasets(true)` -> Supabase `homepage_cache` table.
+
+B. Adding a Movie to a Franchise:
+Admin (`ContentForm.tsx` or `AdminFranchises.tsx`) -> sets `franchise = 'Name'` -> `POST /api/content` -> Supabase `content` table -> cache rebuild.
+
+C. User opening Franchise Details:
+User clicks card -> Route `/franchise/:name` -> `GET /api/content/franchise/:name` -> `getFranchiseContentServer()` -> Supabase PostgreSQL query -> JSON response -> React state rendering.
+
+================================================================================
+PART 32 — FRANCHISE DATA STRUCTURE
+================================================================================
+
+Homepage Franchise Card Object (`homepage_cache`):
+```json
+{
+  "name": "Harry Potter",
+  "category": "Movies",
+  "count": 8,
+  "yearRange": "2001-2011",
+  "avgRating": "7.8",
+  "numAvgRating": 7.8,
+  "posters": [
+    "https://image.tmdb.org/t/p/w342/poster1.jpg",
+    "https://image.tmdb.org/t/p/w342/poster2.jpg"
+  ],
+  "description": "The story of a young wizard...",
+  "items": []
+}
+```
+
+Content Item Franchise Fields (`content` table):
+```json
+{
+  "id": "item_12345",
+  "title": "Harry Potter and the Sorcerer's Stone",
+  "franchise": "Harry Potter",
+  "franchiseName": "Harry Potter",
+  "franchiseOrder": 1,
+  "franchiseDescription": "The story of a young wizard..."
+}
+```
+
+================================================================================
+PART 33 — RELATIONSHIP WITH TMDB
+================================================================================
+
+1. TMDB provides `belongs_to_collection` during details lookup.
+2. Cinema Network stores the collection name in `franchise` and `franchise_name` columns.
+3. Manual admin edits override TMDB collection names.
+4. Future metadata enrichment only sets `franchise` if it is currently blank.
+
+================================================================================
+PART 34 — MANUAL VS AUTOMATIC CONTROL
+================================================================================
+
+| Feature | Automatic | Manual Admin | Both | Neither |
+| ------- | --------- | ------------ | ---- | ------- |
+| Create Franchise | | | Both | |
+| Assign Movie | | | Both | |
+| Franchise Name | | | Both | |
+| Description | | | Both | |
+| Order | | | Both | |
+| Image (Posters) | Automatic | | | |
+| TMDB Collection Fetch | Automatic | | | |
+| Delete Franchise | Automatic (when 0 titles) | Manual (clear titles) | Both | |
+
+================================================================================
+PART 35 — CURRENT BUGS / RISKS
+================================================================================
+
+1. Text Case Sensitivity in SQL Query: `getFranchiseContentServer()` uses `eq(schema.content.franchise, franchiseName)`, which requires exact case string matching. If a title has "harry potter" lowercase, exact query won't match "Harry Potter".
+2. Denormalized Renaming Cost: Renaming a franchise requires updating every matching row in the `content` table individually.
+3. Duplicate Franchise Card Generation: In `FranchisesCarousel.tsx` client-side grouping, minor trailing space variations can cause multiple cards for the same franchise if raw data isn't trimmed.
+
+================================================================================
+PART 36 — FINAL MASTER TABLE
+================================================================================
+
+| Feature | Frontend File | Backend Function | API | Supabase Table | Firestore | Cache | Automatic/Manual |
+| ------- | ------------- | ---------------- | --- | -------------- | --------- | ----- | ---------------- |
+| Franchise Carousel | FranchisesCarousel.tsx | getHomeContent() | GET /api/home/content | homepage_cache | No | Yes (Memory + DB) | Automatic |
+| Franchise Detail | FranchiseDetails.tsx | getFranchiseContentServer() | GET /api/content/franchise/:name | content | No | Fallback search | Automatic |
+| Admin Franchise Management | AdminFranchises.tsx | saveContent() | POST /api/content | content | Replica | Rebuilds on save | Manual |
+| Movie Form Franchise Input | ContentForm.tsx | saveContent() | POST /api/content | content | Replica | Rebuilds on save | Both |
+| TMDB Collection Auto-fill | ContentForm.tsx | /api/tmdb/details/... | GET /api/tmdb/details/... | content | Replica | Rebuilds on save | Automatic |
+
+================================================================================
+PART 37 — FINAL ANSWERS
+================================================================================
+
+1. How does Cinema Network identify a franchise?
+By exact text string matching on the `franchise` and `franchise_name` columns in the `content` table.
+
+2. How does it group movies into a franchise?
+By collecting all content items where `franchise = 'Franchise Name'`.
+
+3. Where is the relationship stored?
+In the `content` table (`franchise`, `franchise_name`, `franchise_order` columns) and precomputed `homepage_cache` table.
+
+4. Does TMDB automatically provide the franchise information?
+Yes, via the `belongs_to_collection.name` field when details are fetched from TMDB.
+
+5. Can admin manually create a franchise?
+Yes, in `AdminFranchises.tsx` or by entering a franchise name in `ContentForm.tsx`.
+
+6. Can admin manually edit a franchise?
+Yes, in `AdminFranchises.tsx`.
+
+7. Can admin manually delete a franchise?
+Yes, by clearing or reassigning all titles associated with that franchise name.
+
+8. Can admin reorder franchises?
+In individual franchises, movies can be ordered via `franchiseOrder`. On the homepage, franchises are automatically ordered by title count and average rating.
+
+9. How is a movie added to an existing franchise?
+By setting its `franchise` field to the exact string name of the existing franchise.
+
+10. How is a movie removed from a franchise?
+By setting its `franchise` field to an empty string `""`.
+
+11. How are franchise movies ordered?
+By `franchise_order ASC` in the database, and `year ASC` on the frontend.
+
+12. How does the homepage get its franchise list?
+From `GET /api/home/content`, which reads the precomputed `'franchises'` key from the `homepage_cache` table.
+
+13. How does the franchise detail page get its movies?
+From `GET /api/content/franchise/:name`, which queries Supabase `content` table.
+
+14. How is franchise data cached?
+Compiled server-side into JSON objects grouped by category and saved to `homepage_cache`.
+
+15. Where is the cache stored?
+In Supabase PostgreSQL `homepage_cache` table and server RAM (`homepageMemoryCache`).
+
+16. Is franchise cache stored in Firestore?
+No. Verified: Franchise homepage cache is strictly Supabase-only.
+
+17. What invalidates the cache?
+Any content creation, edit, deletion, or admin batch update calls `buildAllHomepageDatasets(true)`.
+
+18. What happens when a new movie is added?
+`saveContent()` writes the movie row and triggers an asynchronous rebuild of `homepage_cache`.
+
+19. What happens when a movie is edited?
+Supabase updates the row, and the homepage franchise cache is automatically rebuilt.
+
+20. What happens when a movie is deleted?
+The row is deleted from Supabase, and the homepage cache rebuilds without that movie.
+
+21. What happens when a franchise is deleted?
+When all titles are removed, 0 rows match that franchise name, so it automatically disappears.
+
+22. Can duplicate franchises exist?
+String variations (e.g. "MCU" vs "Marvel Cinematic Universe") can create separate franchise cards unless normalized by the admin.
+
+23. What database is the source of truth?
+Supabase PostgreSQL.
+
+24. What API endpoints control franchises?
+- `GET /api/content/franchise/:name`
+- `GET /api/home/content`
+- `POST /api/content`
+
+25. What exact files control the Franchise system?
+- `src/db/schema.ts`
+- `server-db.ts`
+- `server.ts`
+- `src/components/FranchisesCarousel.tsx`
+- `src/pages/FranchiseDetails.tsx`
+- `src/pages/Detail.tsx`
+- `src/components/admin/AdminFranchises.tsx`
+- `src/pages/admin/ContentForm.tsx`
+
+================================================================================
+FRANCHISE SYSTEM IN SIMPLE TERMS
+================================================================================
+
+In Cinema Network, a "Franchise" is not a separate database table. Instead, it is a shared text label (like "Harry Potter" or "Marvel Cinematic Universe") saved directly on each movie or TV series in the database (`franchise` column).
+
+When a movie is imported from TMDB, Cinema Network automatically checks if TMDB lists a collection name (e.g. "The Dark Knight Collection") and saves it as the movie's franchise. Administrators can also type any custom franchise name or use the Admin Franchise Manager tool to group movies together.
+
+On the website homepage, the server groups movies with the same franchise name, builds a 3D stacked poster card showing the total title count, release year range, and average rating, and saves this ready-to-render list into Supabase's `homepage_cache` database table for instant loading.
+
+When a user clicks a franchise card on the homepage, they are taken to `/franchise/:name`, which fetches all movies belonging to that franchise name from Supabase, sorted by release year, and shows their watch progress across the franchise.
+
+Editing or clearing the franchise text label on movies instantly creates, updates, or deletes franchises across the entire website.

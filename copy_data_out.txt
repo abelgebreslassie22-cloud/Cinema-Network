@@ -1,0 +1,34 @@
+Copying data for table: homepage_cache
+Table homepage_cache already has data, skipping.
+Copying data for table: ads
+Found 0 rows in ads
+Copying data for table: ad_slots
+Found 0 rows in ad_slots
+Copying data for table: admin_settings
+Table admin_settings already has data, skipping.
+Copying data for table: analytics_downloads
+Table analytics_downloads already has data, skipping.
+Copying data for table: analytics_views
+Table analytics_views already has data, skipping.
+Copying data for table: content
+Table content already has data, skipping.
+Copying data for table: franchise_cache
+Found 215 rows in franchise_cache
+Inserted 215 rows into franchise_cache
+Copying data for table: leaderboard_cache
+Found 18 rows in leaderboard_cache
+Inserted 18 rows into leaderboard_cache
+Copying data for table: requests
+Found 0 rows in requests
+Copying data for table: sync_operations
+Found 31 rows in sync_operations
+Inserted 31 rows into sync_operations
+Copying data for table: user_lists
+Found 3 rows in user_lists
+Inserted 3 rows into user_lists
+Copying data for table: user_ratings
+Found 16 rows in user_ratings
+Inserted 16 rows into user_ratings
+Copying data for table: users
+Found 5 rows in users
+Inserted 5 rows into users
